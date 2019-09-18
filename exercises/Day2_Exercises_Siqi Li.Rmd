@@ -1,0 +1,91 @@
+---
+title: "R Day 2 exercises"
+author: "Your name here!"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r global_options, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo=answers, eval=answers,
+                      warning = FALSE, message = FALSE,
+                      cache = FALSE, tidy = FALSE)
+```
+
+<!-- BEFORE YOU START, REMEMBER TO RENAME THE .RMD FILE AND SAVE IT AS day2_exercises_LastNameFirstName.Rmd AND THEN REMOVE THIS INSTRUCTION -->
+
+## Load the data
+
+Read both California energy datasets. Make sure the `datetime` variable is in an appropriate data type (i.e. not character). 
+
+```{r}
+generation_dp <- read.csv(here::here("data/ca_energy_generation.csv"), stringsAsFactors = F)
+imports_dp <- read.csv(here::here("data/ca_energy_imports.csv"), stringsAsFactors = F)
+generation_dp$datetime = as_datetime(generation_dp$datetime)
+imports_dp$datetime = as_datetime(imports_dp$datetime)
+```
+
+
+## Merge and reshape the data
+
+Merge the two datasets and then melt the resulting dataframe/datatable to make it tidy.
+
+```{r}
+head(generation_dp)
+long_gen = melt(generation_dp, 
+                id.vars = 'datetime', 
+                variable.name = 'source',
+                value.name = 'usage')
+```
+
+
+## Creating new variables
+
+Create a series of new variables: 
+
+1. `day`, which is the year-month-day, without the hour. The `lubridate` function `as_date` will do this.
+2. `log_output`, which is the natural log of the output.
+3. **Challenge**: `per_output`, which is the percent of daily output represented by each observation. You will need to use `group_by` and to create a new variable with the total output for the day. (Make sure to use `ungroup()` after this!)
+
+Bonus: If you are using `dplyr`, try to do this all in one pipe!
+
+```{r}
+long_gen %>% mutate(day = as_date(datetime), log_output = log(usage)) %>% 
+    group_by(day) %>% mutate(total_daily_output = sum(usage)) %>% 
+    ungroup() %>% mutate(per_output = usage/total_daily_output)
+```
+
+
+## Summarizing and analyzing data
+
+1. Which source has the greatest mean output by hour? (Hint: Use the `dplyr` verb `arrange(desc(variable))` to order the data frame so that the largest value of `variable` is first. Don't use `desc` and it arranges in ascending order. The `data.table` function is `setorder`.) Which has the least?
+2. Which source has the greatest mean output by day? Which has the least? (Do not include zero values.)
+3. Which sources has the greatest variance in usage over the course of a dataset? Which has the least? (Do not include zero values.)
+
+```{r}
+#1. natural gas has the greatest mean output by hour: 10634.254960; coal has the least: 9.092758
+long_gen %>% group_by(source) %>% summarise(ave_output = mean(usage,na.rm = T)) %>% arrange(desc(ave_output))
+
+#2. natural gas has the highest output by day: 15403.371528 on 2019-09-05
+long_gen %>% filter(usage !=0) %>% group_by(source,as_date(datetime)) %>% summarise(ave_output = mean(usage,na.rm = T)) %>% arrange(desc(ave_output))
+
+#3. natural gas has the largest variance 2.782707e+07 and coal has the smallest variance 7.415288e+00
+long_gen %>% filter(usage !=0) %>% group_by(source) %>% summarise(variance = var(usage)) %>% arrange(desc(variance)) %>%
+    filter(row_number()==1 | row_number()==n())
+```
+
+
+## Analyzing renewable versus non-renewable energy sources
+
+The dataset `regroup.csv` has information about which sources are considered renewable by the state of California. Use this dataset, along with yourdata manipulation skills, to explore the use of renewable and non-renewable sources. Annotate what your descisions for the analysis.
+
+Hint: Use your merge skills to merge the CA energy data with the `regroup` data. Which variable should you join by?
+
+```{r}
+regroup <- read.csv(here::here("data/ca_energy_regroup.csv"), stringsAsFactors = F)
+
+joined_long_gen = long_gen %>% left_join(regroup, by = c('source'='type'))
+
+long_gen %>% group_by(source) %>% summarise(ave_output = mean(usage,na.rm = T)) %>% 
+    arrange(desc(ave_output)) %>% left_join(regroup, by = c('source'='type')) %>% arrange(desc(group))
+```
+
